@@ -19,15 +19,13 @@ npx skills add sanyuan0704/code-review-expert
 
 ## Usage
 
-This skill works with any LLM-based coding agent that supports skill loading.
+After installation, simply run:
 
-```bash
-# Review current git changes
-Review my code changes
-
-# Or trigger explicitly
+```
 /code-review-expert
 ```
+
+The skill will automatically review your current git changes.
 
 ## Workflow
 
