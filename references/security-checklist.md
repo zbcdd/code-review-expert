@@ -116,3 +116,92 @@ if user.balance >= amount:  # Check-then-act
 - Weak validation before persistence (type coercion issues)
 - Missing idempotency for retryable operations
 - Lost updates due to concurrent modifications
+
+## Deadlocks
+
+Deadlocks cause complete system hangs when two or more operations wait indefinitely for each other.
+
+### Common Patterns
+- **Lock ordering violations**: Acquiring multiple locks in inconsistent order across code paths
+- **Circular wait**: Resource dependency cycles (A → B → C → A)
+- **Nested locks**: Calling external code (callbacks, events) while holding a lock
+- **Reentrant lock misuse**: Method acquires lock, then calls another method that acquires same non-reentrant lock
+- **Missing timeouts**: Lock acquisition without timeout, unbounded `wait()` on conditions
+- **Sync-over-async**: Blocking on async result in sync context, thread cannot execute callback
+- **Database deadlocks**: Transactions updating multiple tables in different orders
+
+### Dangerous Patterns
+```cpp
+// Lock ordering violation:
+// Thread 1: lock(A) → lock(B)
+// Thread 2: lock(B) → lock(A)
+std::mutex mtx_a, mtx_b;
+
+void thread1() {
+    std::lock_guard<std::mutex> lock_a(mtx_a);
+    std::lock_guard<std::mutex> lock_b(mtx_b);  // waits for B
+}
+
+void thread2() {
+    std::lock_guard<std::mutex> lock_b(mtx_b);
+    std::lock_guard<std::mutex> lock_a(mtx_a);  // waits for A → deadlock
+}
+
+// Reentrant lock misuse (std::mutex, std::shared_mutex is non-reentrant):
+std::mutex mtx;
+
+void inner() {
+    std::lock_guard<std::mutex> lock(mtx);  // blocks forever
+    do_work();
+}
+
+void outer() {
+    std::lock_guard<std::mutex> lock(mtx);  // acquires lock
+    inner();                                 // deadlock!
+}
+```
+
+### Questions to Ask
+- "Are locks always acquired in the same order?"
+- "Can this lock acquisition block indefinitely?"
+- "Does this code call external code while holding a lock?"
+
+## Clock Skew and Rollback
+
+Time-based logic can fail silently when system clocks are adjusted (NTP sync, leap seconds, DST, VM migration).
+
+### Common Vulnerabilities
+- **Token/session expiry bypass**: Clock rollback makes expired tokens valid again
+- **Distributed ID collision**: Timestamp-based IDs (Snowflake) generate duplicates
+- **Rate limiter bypass**: Time window calculation errors disable rate limiting
+- **Scheduled task issues**: Tasks run twice or get skipped
+- **Lease/lock expiry**: Distributed locks expire early or renew unexpectedly
+- **Log/audit disorder**: Out-of-order timestamps break forensic analysis
+
+### Dangerous Patterns
+```cpp
+// Wall clock for elapsed time → negative duration on rollback
+auto start = std::chrono::system_clock::now();
+do_work();
+auto elapsed = std::chrono::system_clock::now() - start;  // may be negative!
+
+// Fix: use monotonic clock
+auto start = std::chrono::steady_clock::now();
+do_work();
+auto elapsed = std::chrono::steady_clock::now() - start;  // always increases
+
+# Dangerous: expiry check with wall clock
+if time.time() > token.expires_at:  # clock rollback bypasses check
+    raise TokenExpired()
+
+# Dangerous: time-based ID generation
+def generate_id():
+    return int(time.time() * 1000) << 22 | sequence  # duplicates on rollback
+```
+
+### Questions to Ask
+- "Does this code use wall clock (system_clock) or monotonic clock (steady_clock)?"
+- "What happens if the clock jumps backward by 1 hour?"
+- "Are time-based IDs or tokens vulnerable to clock skew between nodes?"
+- "Do distributed components rely on synchronized clocks?"
+

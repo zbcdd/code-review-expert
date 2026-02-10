@@ -59,7 +59,9 @@ Perform a structured review of the current git changes with focus on SOLID, arch
   - Secret leakage or API keys in logs/env/files
   - Rate limits, unbounded loops, CPU/memory hotspots
   - Unsafe deserialization, weak crypto, insecure defaults
+  - Clock skew/rollback: time-based logic failures on NTP sync, leap seconds, DST transitions, monotonic vs wall clock misuse
   - **Race conditions**: concurrent access, check-then-act, TOCTOU, missing locks
+  - **Deadlocks**: lock ordering violations, nested locks, circular wait, missing timeouts, resource starvation
 - Call out both **exploitability** and **impact**.
 
 ### 5) Code quality scan
